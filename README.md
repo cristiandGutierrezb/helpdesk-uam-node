@@ -9,8 +9,10 @@ Manizales. Node.js + TypeScript estricto, Express, Prisma y PostgreSQL.
 > producto convierte el escalamiento en una regla del sistema y no en un acto de
 > memoria de una persona. Ver `docs/vision-helpdesk-uam.md`.
 
-Estado actual: **autenticación y registro de usuarios** (F19, F20). Sobre esa
-base entran después tickets, catálogo de SLA y escalamiento automático.
+Estado actual: **autenticación y registro de usuarios** (F19, F20), **catálogo
+de categorías y SLA** (F03, F04) y **ciclo de vida de tickets** (F01, F02, F06,
+F10, F11). Falta el escalamiento automático por vencimiento (F08), que es el
+diferenciador del producto y se apoya en las tres piezas anteriores.
 
 ---
 
@@ -21,6 +23,7 @@ npm install          # instala y genera el cliente de Prisma
 cp .env.example .env
 npm run db:up        # PostgreSQL en localhost:5888 (Docker)
 npm run db:migrate   # aplica las migraciones
+npm run db:seed      # catálogo provisional de categorías (sin él no hay tickets)
 npm run dev          # http://localhost:3001/api
 ```
 
@@ -39,8 +42,31 @@ Todo cuelga del prefijo `/api`.
 | `POST` | `/api/auth/login` | `{ correo, clave }` → `{ token, usuario }` |
 | `GET` | `/api/auth/perfil` | Usuario de la sesión; requiere `Authorization: Bearer <token>` |
 
+Todo lo que sigue exige sesión (`Authorization: Bearer <token>`).
+
+| Método | Ruta | Qué hace | Quién |
+|---|---|---|---|
+| `GET` | `/api/categorias?activas=true` | Catálogo de categorías y su SLA | cualquiera |
+| `GET` | `/api/categorias/:id` | Una categoría | cualquiera |
+| `POST` | `/api/categorias` | `{ nombre, descripcion?, horasSla?, activa? }` → 201 | coordinación |
+| `PATCH` | `/api/categorias/:id` | Modificación parcial | coordinación |
+| `DELETE` | `/api/categorias/:id` | 204, o 409 si tiene tickets | coordinación |
+| `POST` | `/api/tickets` | `{ asunto, descripcion, categoriaId, prioridad? }` → 201 | cualquiera |
+| `GET` | `/api/tickets` | Filtros: `estado`, `prioridad`, `categoriaId`, `agenteId`, `solicitanteId`, `texto` | cualquiera |
+| `GET` | `/api/tickets/:id` | Un ticket | dueño o soporte |
+| `PATCH` | `/api/tickets/:id` | Modificación parcial; valida la transición de estado | dueño o soporte |
+| `DELETE` | `/api/tickets/:id` | 204 | coordinación |
+
+«coordinación» = `COORDINADOR` o `ADMINISTRADOR`. Un `SOLICITANTE` solo ve y
+modifica sus propios tickets, y no puede asignar agente.
+
 Roles: `SOLICITANTE` (por defecto), `AGENTE`, `COORDINADOR`, `ADMINISTRADOR`.
 El token es un JWT HS256 con vigencia de 8 horas.
+
+### Las dos reglas de negocio que vive el servidor, no el cliente
+
+- **Ciclo de vida (F06)**: un ticket solo cambia de estado por una transición permitida (`TRANSICIONES` en `dominio/modelo/Ticket.ts`). `NUEVO` no salta a `RESUELTO`; `CERRADO` es final. El intento responde 409.
+- **Categoría en uso**: una categoría con tickets no se borra, se desactiva (`activa: false`). Borrarla dejaría tickets sin clasificación y rompería el historial inmutable (R08).
 
 ---
 
@@ -49,14 +75,14 @@ El token es un JWT HS256 con vigencia de 8 horas.
 ```
 src/
 ├── dominio/              El negocio. No importa nada de afuera.
-│   ├── modelo/           Usuario · UsuarioDTO · Rol · Ticket
-│   └── puertos/          UsuarioDAO · ServicioClaves · ServicioTokens
+│   ├── modelo/           Usuario · UsuarioDTO · Rol · Ticket · Categoria
+│   └── puertos/          UsuarioDAO · CategoriaDAO · TicketDAO · ServicioClaves · ServicioTokens
 │
 ├── aplicacion/
-│   └── casos-uso/        RegistrarUsuario · IniciarSesion
+│   └── casos-uso/        RegistrarUsuario · IniciarSesion · GestionarCategorias · GestionarTickets
 │
 ├── infraestructura/      Todo lo que se puede cambiar sin cambiar el negocio.
-│   ├── persistencia/     UsuarioDAOPrisma · cliente de Prisma
+│   ├── persistencia/     UsuarioDAOPrisma · CategoriaDAOPrisma · TicketDAOPrisma · cliente de Prisma
 │   ├── seguridad/        ClavesBcrypt · TokensJwt
 │   └── http/             servidor.ts · openapi.ts · rutas/
 │
@@ -137,8 +163,19 @@ mismos (`UsuarioDTO`, `SesionDTO`, `ErrorDTO`), así que lo que se lee en
 
 Una entidad **no** lleva sufijo a propósito: `Usuario` es el concepto del
 negocio, no un formato de transporte ni una fila de tabla. Ponerle `DTO` diría
-algo falso sobre él. `Ticket` recibirá su `TicketDTO` cuando exista la ruta HTTP
-que lo exponga, no antes.
+algo falso sobre él. `Ticket` y `Categoria` salen tal cual por HTTP porque no
+tienen nada que ocultar: no hay un `TicketDTO` hasta que haya un campo que el
+cliente no deba ver, como sí pasa con `claveHash`.
+
+### Un caso de uso por entidad, no por operación
+
+`GestionarCategorias` y `GestionarTickets` agrupan crear, buscar, modificar y
+eliminar. Es una desviación deliberada de «una clase por caso de uso»: las
+cuatro operaciones comparten las mismas dependencias y las mismas reglas, y
+separarlas serían ocho clases con el mismo constructor. Cuando una operación
+gane reglas propias —el escalamiento de F08, la auditoría de F23— esa sí sale a
+su propia clase, junto a `RegistrarUsuario` e `IniciarSesion`, que ya las
+tienen.
 
 ### Convenciones
 
@@ -160,6 +197,7 @@ que lo exponga, no antes.
 | `npm run build` / `npm start` | Compilar a `dist/` y ejecutar |
 | `npm run db:up` / `db:down` | Levantar y bajar PostgreSQL |
 | `npm run db:migrate` | Crear y aplicar migraciones |
+| `npm run db:seed` | Cargar el catálogo provisional de categorías y SLA |
 | `npm run db:studio` | Explorador visual de los datos |
 | `npm run arquitectura` | Verificar que el dominio no importa infraestructura |
 

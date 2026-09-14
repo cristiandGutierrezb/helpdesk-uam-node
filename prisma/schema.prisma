@@ -23,3 +23,48 @@ model Usuario {
   activo    Boolean  @default(true)
   creadoEn  DateTime @default(now())
 }
+
+enum EstadoTicket {
+  NUEVO
+  ASIGNADO
+  EN_PROCESO
+  ESPERA_INFORMACION
+  RESUELTO
+  CERRADO
+}
+
+enum Prioridad {
+  BAJA
+  MEDIA
+  ALTA
+  CRITICA
+}
+
+/// Catálogo de clasificación (F03/F04): la categoría determina el SLA aplicable.
+model Categoria {
+  id          String   @id @default(uuid())
+  nombre      String   @unique
+  descripcion String   @default("")
+  horasSla    Int      @default(24)
+  activa      Boolean  @default(true)
+  creadoEn    DateTime @default(now())
+  tickets     Ticket[]
+}
+
+model Ticket {
+  id            String       @id @default(uuid())
+  asunto        String
+  descripcion   String
+  estado        EstadoTicket @default(NUEVO)
+  prioridad     Prioridad    @default(MEDIA)
+  categoria     Categoria    @relation(fields: [categoriaId], references: [id])
+  categoriaId   String
+  solicitanteId String
+  agenteId      String?
+  creadoEn      DateTime     @default(now())
+  actualizadoEn DateTime     @updatedAt
+
+  @@index([estado])
+  @@index([solicitanteId])
+  @@index([agenteId])
+}

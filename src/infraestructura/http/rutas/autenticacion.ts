@@ -49,6 +49,20 @@ export function exigirSesion(tokens: ServicioTokens): RequestHandler {
   }
 }
 
+/**
+ * Exige que la sesión tenga uno de los roles indicados (F20).
+ *
+ * Se pone SIEMPRE después de `exigirSesion`: da por hecho que la credencial ya
+ * está en `res.locals`.
+ */
+export function exigirRol(...roles: readonly Rol[]): RequestHandler {
+  return (_req, res, next) => {
+    const { rol } = res.locals['credencial'] as CredencialDTO
+    if (!roles.includes(rol)) return void res.status(403).json({ error: 'No autorizado para esta operación' })
+    next()
+  }
+}
+
 export function rutasAutenticacion(deps: DependenciasAutenticacion): Router {
   const rutas = Router()
 
