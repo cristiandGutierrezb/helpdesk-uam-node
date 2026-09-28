@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import type { RequestHandler } from 'express'
-import { aUsuarioDTO, esRol } from '../../../dominio/modelo/Usuario'
+import { aUsuarioDTO } from '../../../dominio/modelo/Usuario'
 import type { Rol } from '../../../dominio/modelo/Usuario'
 import type { CredencialDTO, ServicioTokens, UsuarioDAO } from '../../../dominio/puertos'
 import { CorreoYaRegistrado, RegistrarUsuario } from '../../../aplicacion/casos-uso/RegistrarUsuario'
@@ -15,15 +15,24 @@ export interface LoginDTO {
   clave: string
 }
 
-/** Validación de frontera: lo que entra por HTTP es `unknown` hasta que se prueba lo contrario. */
+/**
+ * Validación de frontera: lo que entra por HTTP es `unknown` hasta que se prueba lo contrario.
+ *
+ * El `rol` NO se lee del cuerpo. El registro es público y quien se inscribe no
+ * puede elegir su propio mando: aceptarlo permitía crear un ADMINISTRADOR con
+ * una sola petición sin sesión, y con eso la autorización por rol (F20) y el
+ * catálogo bajo llave (F04) dejaban de significar algo.
+ *
+ * El rol lo aporta el directorio institucional (F21/R01). Mientras ese
+ * adaptador no exista, las cuentas de agente y coordinación las crea
+ * `npm run db:seed`, que es un acto administrativo y no una ruta HTTP.
+ */
 function validarRegistro(cuerpo: unknown): RegistroDTO | string {
   const d = (cuerpo ?? {}) as Record<string, unknown>
   if (typeof d['nombre'] !== 'string' || d['nombre'].trim().length < 2) return 'nombre requerido (mínimo 2 caracteres)'
   if (typeof d['correo'] !== 'string' || !CORREO.test(d['correo'].trim())) return 'correo inválido'
   if (typeof d['clave'] !== 'string' || d['clave'].length < 8) return 'clave requerida (mínimo 8 caracteres)'
-  const rol: unknown = d['rol'] ?? 'SOLICITANTE'
-  if (!esRol(rol)) return 'rol inválido'
-  return { nombre: d['nombre'], correo: d['correo'], clave: d['clave'], rol: rol satisfies Rol }
+  return { nombre: d['nombre'], correo: d['correo'], clave: d['clave'], rol: 'SOLICITANTE' }
 }
 
 function validarLogin(cuerpo: unknown): LoginDTO | null {
