@@ -18,17 +18,17 @@ const errores: ErrorRequestHandler = (error, _req, res, _next) => {
 }
 
 export function crearServidor(deps: Dependencias): Express {
-  const api = Router()
-  api.get('/salud', (_req, res) => void res.json({ estado: 'ok' }))
-  api.get('/openapi.json', (_req, res) => void res.json(openapi))
-  api.use('/docs', swaggerUi.serve, swaggerUi.setup(openapi, { customSiteTitle: 'HelpDesk UAM · API' }))
-  api.use('/auth', rutasAutenticacion(deps))
-  api.use('/categorias', rutasCategorias(deps))
-  api.use('/tickets', rutasTickets(deps))
+  const rutas = Router()
+  rutas.get('/salud', (_req, res) => void res.json({ estado: 'ok' }))
+  rutas.get('/openapi.json', (_req, res) => void res.json(openapi))
+  rutas.use('/docs', swaggerUi.serve, swaggerUi.setup(openapi, { customSiteTitle: 'HelpDesk UAM · API' }))
+  rutas.use('/auth', rutasAutenticacion(deps))
+  rutas.use('/categorias', rutasCategorias(deps))
+  rutas.use('/tickets', rutasTickets(deps))
 
   const app = express()
   app.use(express.json())
-  app.use('/api', api)
+  app.use('/api', rutas)
   app.use((_req, res) => void res.status(404).json({ error: 'Ruta no encontrada' }))
   app.use(errores)
   return app
